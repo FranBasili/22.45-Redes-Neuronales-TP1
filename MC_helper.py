@@ -1,8 +1,59 @@
-from sklearn.metrics import confusion_matrix
 from tensorflow import keras
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_curve, auc
+from sklearn.preprocessing import label_binarize
+
+
+def plot_roc(y_true, y_score, nameModel):
+  n_classes = len(np.unique(y_true))
+  y_true = label_binarize(y_true, classes=np.arange(n_classes))
+
+  # Calcular la curva ROC para cada clase
+  fpr = dict()
+  tpr = dict()
+  roc_auc = dict()
+  for i in range(n_classes):
+      fpr[i], tpr[i], _ = roc_curve(y_true[:, i], y_score[:, i])
+      roc_auc[i] = auc(fpr[i], tpr[i])
+
+  # Calcular el promedio de las curvas ROC micro y macro
+  fpr["micro"], tpr["micro"], _ = roc_curve(y_true.ravel(), y_score.ravel())
+  roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+
+  # Calcular el promedio de las curvas ROC macro
+  all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+  mean_tpr = np.zeros_like(all_fpr)
+  for i in range(n_classes):
+      mean_tpr += np.interp(all_fpr, fpr[i], tpr[i])
+  mean_tpr /= n_classes
+
+  # Calcular el promedio de AUC macro
+  fpr["macro"] = all_fpr
+  tpr["macro"] = mean_tpr
+  roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
+
+  # Graficar la curva ROC para cada clase
+  plt.figure()
+  for i in range(n_classes):
+      plt.plot(fpr[i], tpr[i], color="C"+str(i), lw=2,
+              label='Clase {0} (AUC = {1:0.2f})'.format(i, roc_auc[i]))
+
+  # Graficar la curva ROC micro y macro
+  plt.plot(fpr["macro"], tpr["macro"], color='navy', lw=2,
+          label='Curva ROC Macro (AUC = {0:0.2f})'.format(roc_auc["macro"]))
+
+  # Configurar los ejes y el título del gráfico
+  plt.plot([0, 1], [0, 1], 'k--', lw=2)
+  plt.xlim([0.0, 1.0])
+  plt.ylim([0.0, 1.05])
+  plt.xlabel('Falsos Positivos')
+  plt.ylabel('Verdaderos Positivos')
+  plt.title('Curva ROC para'+ nameModel)
+  plt.legend(loc="lower right")
+  plt.show()
 
 def buildModel(activation='relu', dropout=0.2, init= tf.keras.initializers.GlorotNormal(), batchNormalization=False):
   model=keras.Sequential()
@@ -36,34 +87,20 @@ def buildModel(activation='relu', dropout=0.2, init= tf.keras.initializers.Gloro
 
 def plot_confusion_matrix(y_true, y_pred, classes,
                           normalize=False,
-                          title=None,
                           cmap=plt.cm.Blues):
 
-    if not title:
-        if normalize:
-            title = 'Normalized confusion matrix'
-        else:
-            title = 'Confusion matrix, without normalization'
+    title = 'Normalized confusion matrix'
 
     # Compute confusion matrix
     cm = confusion_matrix(y_true, y_pred)
-    # Only use the labels that appear in the data
-    # classes = classes[unique_labels(y_true, y_pred)]
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
-    else:
-        print('Confusion matrix, without normalization')
-
-    # print(cm)
-
+    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
     ax.figure.colorbar(im, ax=ax)
-    # We want to show all ticks...
+
     ax.set(xticks=np.arange(cm.shape[1]),
            yticks=np.arange(cm.shape[0]),
-           # ... and label them with the respective list entries
            xticklabels=classes, yticklabels=classes,
            title=title,
            ylabel='True label',
@@ -74,7 +111,7 @@ def plot_confusion_matrix(y_true, y_pred, classes,
              rotation_mode="anchor")
 
     # Loop over data dimensions and create text annotations.
-    fmt = '.2f' if normalize else 'd'
+    fmt = '.2f'
     thresh = cm.max() / 2.
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
@@ -85,7 +122,7 @@ def plot_confusion_matrix(y_true, y_pred, classes,
     return ax
 
 def showGraph(title="", epochs=20):
-  plt.xticks(np.arange(1,CANT_EPOCHS+1), np.arange(1,CANT_EPOCHS+1), rotation=45)
+  plt.xticks(np.arange(1,epochs+1), np.arange(1,epochs+1), rotation=45)
   plt.ylabel("accuracy")
   plt.xlabel("epochs")
   plt.grid()
@@ -132,6 +169,35 @@ def DB_model():
 
   model.add(keras.layers.Dense(10, activation='softmax', 
                                kernel_initializer=init))
+
+  return model
+
+def pruneModel(activation='relu', dropout=0.2, init= tf.keras.initializers.GlorotNormal(), batchNormalization=False):
+  model=keras.Sequential()
+  model.add(keras.layers.Flatten(input_shape=(28,28))) 
+
+  model.add(keras.layers.Dropout(dropout))
+
+  model.add(keras.layers.Dense(1024, activation=activation, kernel_initializer=init))
+  model.add(keras.layers.Dropout(dropout))
+  if batchNormalization:
+    model.add(keras.layers.BatchNormalization()) 
+
+  model.add(keras.layers.Dense(1024, activation=activation, kernel_initializer=init))
+  model.add(keras.layers.Dropout(dropout))
+  if batchNormalization:
+    model.add(keras.layers.BatchNormalization()) 
+
+  model.add( keras.layers.Dense(512, activation=activation, kernel_initializer=init))
+  model.add(keras.layers.Dropout(dropout))
+  if batchNormalization:
+    model.add(keras.layers.BatchNormalization()) 
+
+  model.add(keras.layers.Dense(512, activation=activation, kernel_initializer=init))
+  if batchNormalization:
+    model.add(keras.layers.BatchNormalization()) 
+
+  model.add(keras.layers.Dense(10, activation='softmax', kernel_initializer=init))
 
   return model
 
